@@ -79,7 +79,6 @@ st.markdown("""
     
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
     
     .block-container {
         max-width: 1400px;
