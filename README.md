@@ -22,6 +22,82 @@ All required End-of-Day Deliverables for this project have been fully completed 
 
 ---
 
+## 🏛️ Medallion Architecture
+
+Below is the complete data flow mapping the transformation of raw `.csv` files through the ETL pipeline into our final analytical Star Schema.
+
+```mermaid
+flowchart LR
+    subgraph Bronze ["Bronze Layer (Raw)"]
+        direction TB
+        B1[(caract-2024.csv)]
+        B2[(lieux-2024.csv)]
+        B3[(usagers-2024.csv)]
+        B4[(vehicules-2024.csv)]
+    end
+
+    subgraph ETL ["Transformations"]
+        direction TB
+        T1[Format Dates & Coords]
+        T2[Deduplicate]
+        T3[Standardize Nulls '-1']
+    end
+
+    subgraph Silver ["Silver Layer (Cleansed)"]
+        direction TB
+        S1[(caract_silver)]
+        S2[(lieux_silver)]
+        S3[(usagers_silver)]
+        S4[(vehicules_silver)]
+    end
+
+    subgraph Gold ["Gold Layer (Star Schema)"]
+        direction TB
+        G1{{Fact_Accidents}}
+        G2[(Dim_Location)]
+        G3[(Dim_Vehicles)]
+        G4[(Dim_Users)]
+    end
+    
+    subgraph BI ["BI & Dashboards"]
+        direction TB
+        D1[Data Quality Dashboard]
+        D2[Road Safety Analytics]
+    end
+
+    %% Flow logic
+    B1 --> T1 --> S1
+    B2 --> T2 --> S2
+    B3 --> T3 --> S3
+    B4 --> T3 --> S4
+
+    S1 -->|Derive KPIs| G1
+    S2 -->|Extract Dims| G2
+    S3 -->|Extract Dims| G4
+    S4 -->|Extract Dims| G3
+    
+    %% Star Schema Links
+    G2 -.->|1:N| G1
+    G3 -.->|N:1| G1
+    G4 -.->|N:1| G1
+
+    %% To BI
+    G1 --> D2
+    G2 --> D2
+    S1 --> D1
+
+    %% Styling
+    classDef bronze fill:#cd7f32,stroke:#333,stroke-width:1px,color:#fff;
+    classDef silver fill:#c0c0c0,stroke:#333,stroke-width:1px,color:#000;
+    classDef gold fill:#ffd700,stroke:#333,stroke-width:1px,color:#000;
+    
+    class B1,B2,B3,B4 bronze;
+    class S1,S2,S3,S4 silver;
+    class G1,G2,G3,G4 gold;
+```
+
+---
+
 ## Project Structure
 - **`Part_2_*.md`**: Markdown documents containing the architectural models, transformation plans, and diagrams.
 - **`etl_*.py`**: Python ETL scripts for building the Silver and Gold data layers.
