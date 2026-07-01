@@ -44,10 +44,10 @@ def load_data():
                 
     missing_df = pd.DataFrame(missing_data).sort_values('Missing %', ascending=False).head(10)
     
-    return num_tables, duplicates, invalid_coords, hidden_unknowns_cols, high_missing_cols, missing_df
+    return datasets, num_tables, duplicates, invalid_coords, hidden_unknowns_cols, high_missing_cols, missing_df
 
 with st.spinner("Crunching BAAC data..."):
-    num_tables, duplicates, invalid_coords, hidden_unknowns_cols, high_missing_cols, missing_df = load_data()
+    datasets, num_tables, duplicates, invalid_coords, hidden_unknowns_cols, high_missing_cols, missing_df = load_data()
 
 # --- Custom CSS for Premium Aesthetics ---
 st.markdown("""
@@ -317,8 +317,8 @@ with st.sidebar:
     st.markdown('<div class="sidebar-title">Quality Intelligence</div>', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-text">Executive Data Quality Readout for the 2024 French Road Safety (BAAC) dataset.</div>', unsafe_allow_html=True)
     
-    st.markdown('<div class="sidebar-title">Dataset Context</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-text">Contains 4 relational tables describing accident characteristics, locations, vehicles, and users.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-title">Dataset Selection</div>', unsafe_allow_html=True)
+    selected_dataset = st.selectbox("Select Dataset to Profile", options=["caract", "lieux", "usagers", "vehicules"], index=0)
     
     st.divider()
     st.markdown('<div class="sidebar-text"><strong>Status:</strong> Ready for ETL Phase<br><strong>Profiled:</strong> July 2026</div>', unsafe_allow_html=True)
@@ -351,23 +351,65 @@ with col5:
 st.markdown("<br><br>", unsafe_allow_html=True)
 
 # --- Tabs ---
-tab1, tab2 = st.tabs(["Quality Report", "Operational Impact"])
+tab1, tab2, tab3 = st.tabs(["Dataset Deep Dive", "Executive Quality Report", "Operational Impact"])
 
-# --- TAB 1: Quality Report ---
+# --- TAB 1: Dataset Deep Dive (PART 1 REQUIREMENTS) ---
 with tab1:
+    st.markdown(f'<br><h3 style="font-weight: 700; margin-bottom: 8px;">Profiling Analysis: {selected_dataset.capitalize()}</h3>', unsafe_allow_html=True)
+    st.markdown(f'<p style="color: var(--text-muted); margin-bottom: 24px;">Deep-dive into the structural inventory, missingness, and consistency exactly matching Part 1 requirements for the <code>{selected_dataset}-2024.csv</code> table.</p>', unsafe_allow_html=True)
+    
+    df_selected = datasets[selected_dataset]
+    
+    # A. Dataset Structure
+    st.markdown('<h4>A. Dataset Structure (Column Inventory)</h4>', unsafe_allow_html=True)
+    cols_df = pd.DataFrame({
+        "Column Name": df_selected.columns,
+        "Data Type": df_selected.dtypes.astype(str)
+    })
+    st.dataframe(cols_df, use_container_width=True, height=250)
+    
+    # B. Missing Values & Completeness
+    st.markdown('<br><h4>B. Missing Values & Completeness</h4>', unsafe_allow_html=True)
+    missing_pct = (df_selected.isnull().sum() / len(df_selected)) * 100
+    missing_pct = missing_pct[missing_pct > 0].sort_values(ascending=False)
+    
+    if len(missing_pct) > 0:
+        st.bar_chart(missing_pct, height=300, color="#ef4444")
+    else:
+        st.success("No missing values (nulls) detected natively in this table.")
+        
+    # C. Consistency and Validity Checks
+    st.markdown('<br><h4>C. Consistency and Validity Checks</h4>', unsafe_allow_html=True)
+    colA, colB = st.columns(2)
+    with colA:
+        dup_count = df_selected.duplicated().sum()
+        status = "chip-good" if dup_count == 0 else "chip-risk"
+        text = "Clean" if dup_count == 0 else "Duplicates Found"
+        render_kpi("Exact Duplicates", str(dup_count), "Total duplicated records", status, text)
+        
+    with colB:
+        hidden_col_count = 0
+        for c in df_selected.columns:
+            if df_selected[c].dtype in ['int64', 'float64', 'int32', 'float32'] and (df_selected[c] == -1).sum() > 0:
+                hidden_col_count += 1
+        status_hid = "chip-good" if hidden_col_count == 0 else "chip-watch"
+        text_hid = "Clean" if hidden_col_count == 0 else "Hidden Nulls Detected"
+        render_kpi("Hidden Anomalies (-1)", str(hidden_col_count), "Columns natively using -1", status_hid, text_hid)
+
+
+# --- TAB 2: Quality Report ---
+with tab2:
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Dynamic Data Viz
-    st.markdown('<h3 style="font-weight: 700; margin-bottom: 8px;">Structural Fragmentation</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-weight: 700; margin-bottom: 8px;">Global Structural Fragmentation</h3>', unsafe_allow_html=True)
     st.markdown('<p style="color: var(--text-muted); margin-bottom: 24px;">Top 10 columns across the entire database with the highest percentage of missing values.</p>', unsafe_allow_html=True)
     
-    # Natively supported Streamlit bar chart
     chart_data = missing_df.set_index('Column')[['Missing %']]
     st.bar_chart(chart_data, height=350, color="#3730a3")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 3 Insight Cards
     c1, c2, c3 = st.columns(3)
     with c1:
         render_insight_card(
@@ -393,7 +435,6 @@ with tab1:
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     
-    # Completeness Matrix
     st.markdown('<h3 style="font-weight: 700; margin-bottom: 8px;">Completeness Matrix</h3>', unsafe_allow_html=True)
     st.markdown('<p style="color: var(--text-muted); margin-bottom: 24px;">Deep-dive into structural fragmentation across the four primary entities.</p>', unsafe_allow_html=True)
     
@@ -403,8 +444,8 @@ with tab1:
     render_matrix_row("caract", "Accident Characteristics", "Address data (adr) missing 4%, but core coordinates remain robustly populated.", "chip-good", "Healthy")
 
 
-# --- TAB 2: Operational Impact ---
-with tab2:
+# --- TAB 3: Operational Impact ---
+with tab3:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<h3 style="font-weight: 700; margin-bottom: 8px;">Downstream Analytics Impact</h3>', unsafe_allow_html=True)
     st.markdown('<p style="color: var(--text-muted); margin-bottom: 24px;">How missingness and hidden data patterns affect integration, modeling, and BI workflows.</p>', unsafe_allow_html=True)
