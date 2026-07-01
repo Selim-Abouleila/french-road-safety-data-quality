@@ -82,7 +82,7 @@ flowchart LR
     %% To BI
     G1 --> D2
     G2 --> D2
-    S1 --> D1
+    B1 --> D1
 
     %% Styling
     classDef bronze fill:#cd7f32,stroke:#333,stroke-width:1px,color:#fff;
