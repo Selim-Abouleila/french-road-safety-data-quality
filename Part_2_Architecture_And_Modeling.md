@@ -92,6 +92,13 @@ flowchart LR
     class B1,B2,B3,B4 bronze;
     class S1,S2,S3,S4 silver;
     class G1,G2,G3,G4 gold;
+
+    %% Subgraph Background Colors
+    style Bronze fill:#fdf4e3,stroke:#cd7f32,stroke-width:2px,color:#000
+    style ETL fill:#f0f9ff,stroke:#38bdf8,stroke-width:2px,color:#000
+    style Silver fill:#f3f4f6,stroke:#9ca3af,stroke-width:2px,color:#000
+    style Gold fill:#fef9c3,stroke:#eab308,stroke-width:2px,color:#000
+    style BI fill:#f0fdf4,stroke:#4ade80,stroke-width:2px,color:#000
 ```
 
 ---
@@ -101,3 +108,4 @@ flowchart LR
 1. **Why Medallion Architecture?** The strict separation prevents corrupt raw data from affecting BI tools. The Silver layer acts as an idempotent, clean foundation, while the Gold layer is purely optimized for fast aggregation (read-heavy operations).
 2. **Why a Star Schema in Gold?** The relational raw data (4 tables) requires complex joins. By centralizing the quantitative data into `Fact_Accidents` and pushing descriptive strings to Dimensions, we minimize query latency and avoid massive data duplication for downstream BI platforms like PowerBI or Tableau.
 3. **Handling of `-1` (Null Imputation in Silver):** We chose to convert `-1` to `NULL` globally at the Silver layer rather than Gold. This ensures that any data scientist querying the Silver layer directly will not accidentally train a machine learning model where `-1` skews averages or clustering algorithms.
+4. **Why a 1:N relationship between Dim_Location and Fact_Accidents?** An N:N relationship implies that a single car crash can occur in multiple completely disparate locations simultaneously, which is physically impossible. Therefore, a specific location can host *many* accidents over time (1 Location → N Accidents), but each accident record in the fact table links to exactly *one* location in the dimension table (1:N), maintaining strict physical and temporal integrity.

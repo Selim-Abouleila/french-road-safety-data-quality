@@ -94,6 +94,13 @@ flowchart LR
     class B1,B2,B3,B4 bronze;
     class S1,S2,S3,S4 silver;
     class G1,G2,G3,G4 gold;
+
+    %% Subgraph Background Colors
+    style Bronze fill:#fdf4e3,stroke:#cd7f32,stroke-width:2px,color:#000
+    style ETL fill:#f0f9ff,stroke:#38bdf8,stroke-width:2px,color:#000
+    style Silver fill:#f3f4f6,stroke:#9ca3af,stroke-width:2px,color:#000
+    style Gold fill:#fef9c3,stroke:#eab308,stroke-width:2px,color:#000
+    style BI fill:#f0fdf4,stroke:#4ade80,stroke-width:2px,color:#000
 ```
 
 ---
