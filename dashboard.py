@@ -1,131 +1,452 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="French Road Safety - Data Quality",
-    page_icon="🛡️",
+    page_title="Data Quality Intelligence | BAAC 2024",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# --- Dynamic Data Loading & KPI Calculation ---
+@st.cache_data
+def load_data():
+    datasets = {}
+    datasets['caract'] = pd.read_csv('caract-2024.csv', sep=';', low_memory=False)
+    datasets['lieux'] = pd.read_csv('lieux-2024.csv', sep=';', low_memory=False)
+    datasets['usagers'] = pd.read_csv('usagers-2024.csv', sep=';', low_memory=False)
+    datasets['vehicules'] = pd.read_csv('vehicules-2024.csv', sep=';', low_memory=False)
+    
+    num_tables = len(datasets)
+    duplicates = sum(df.duplicated().sum() for df in datasets.values())
+    
+    caract = datasets['caract']
+    lat = pd.to_numeric(caract['lat'].str.replace(',', '.'), errors='coerce')
+    invalid_coords = ((lat < -90) | (lat > 90)).sum()
+    
+    hidden_unknowns_cols = 0
+    high_missing_cols = 0
+    missing_data = []
+
+    for name, df in datasets.items():
+        missing_pct = (df.isnull().sum() / len(df)) * 100
+        high_missing_cols += (missing_pct > 90).sum()
+        
+        for col in df.columns:
+            if df[col].dtype in ['int64', 'float64', 'int32', 'float32']:
+                if (df[col] == -1).sum() > 0:
+                    hidden_unknowns_cols += 1
+                    
+        for col, pct in missing_pct.items():
+            if pct > 0:
+                missing_data.append({'Dataset': name.capitalize(), 'Column': f"{col} ({name})", 'Missing %': pct})
+                
+    missing_df = pd.DataFrame(missing_data).sort_values('Missing %', ascending=False).head(10)
+    
+    return num_tables, duplicates, invalid_coords, hidden_unknowns_cols, high_missing_cols, missing_df
+
+with st.spinner("Crunching BAAC data..."):
+    num_tables, duplicates, invalid_coords, hidden_unknowns_cols, high_missing_cols, missing_df = load_data()
+
 # --- Custom CSS for Premium Aesthetics ---
 st.markdown("""
 <style>
-    /* Global font and background */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    :root {
+        --bg-color: #f8fafc;
+        --surface-color: #ffffff;
+        --border-color: #e2e8f0;
+        --text-main: #0f172a;
+        --text-muted: #64748b;
+        --accent-primary: #2563eb;
+        --accent-success: #10b981;
+        --accent-warning: #f59e0b;
+        --accent-critical: #ef4444;
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        --radius-lg: 16px;
+        --radius-md: 12px;
+        --radius-sm: 8px;
+    }
+
     html, body, [class*="css"]  {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+        background-color: var(--bg-color);
+        color: var(--text-main);
     }
     
-    .main-title {
-        font-size: 3rem;
-        font-weight: 800;
-        background: -webkit-linear-gradient(45deg, #FF6B6B, #4ECDC4);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0px;
-    }
-    .sub-title {
-        font-size: 1.2rem;
-        color: #888;
-        margin-bottom: 30px;
-    }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     
-    .stAlert {
-        border-radius: 10px;
-        border: none;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    .block-container {
+        max-width: 1400px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
     }
-    
-    .metric-card {
-        background-color: rgba(255, 255, 255, 0.05);
-        border-radius: 12px;
+
+    .hero-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        background-color: #eff6ff;
+        color: var(--accent-primary);
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+        border: 1px solid #bfdbfe;
+    }
+    .hero-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--text-main);
+        margin-bottom: 8px;
+        line-height: 1.2;
+    }
+    .hero-subtitle {
+        font-size: 1.1rem;
+        color: var(--text-muted);
+        font-weight: 400;
+        margin-bottom: 24px;
+        max-width: 800px;
+        line-height: 1.6;
+    }
+
+    .kpi-wrapper {
+        background-color: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
         padding: 20px;
-        border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 100%;
         transition: transform 0.2s ease-in-out;
     }
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    .kpi-wrapper:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
     }
+    .kpi-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .kpi-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .kpi-chip {
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 12px;
+    }
+    .kpi-value {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: var(--text-main);
+        margin-bottom: 4px;
+        line-height: 1;
+    }
+    .kpi-caption {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+
+    .insight-card {
+        background-color: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        box-shadow: var(--shadow-sm);
+        height: 100%;
+        border-top: 4px solid var(--border-color);
+    }
+    .insight-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+    .insight-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-main);
+    }
+    .insight-takeaway {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-main);
+        margin-bottom: 8px;
+        line-height: 1.5;
+    }
+    .insight-body {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        line-height: 1.6;
+    }
+
+    .matrix-row {
+        background-color: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 16px 24px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+    }
+    .matrix-table-name {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--accent-primary);
+        background: #eff6ff;
+        padding: 4px 10px;
+        border-radius: 6px;
+        width: 140px;
+        text-align: center;
+    }
+    .matrix-desc {
+        flex: 1;
+        font-size: 0.95rem;
+        color: var(--text-muted);
+    }
+    .matrix-issue {
+        flex: 2;
+        font-size: 0.95rem;
+        color: var(--text-main);
+        font-weight: 500;
+    }
+    .matrix-status {
+        width: 120px;
+        text-align: right;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 0;
+        color: var(--text-muted);
+        font-weight: 500;
+        font-size: 1.05rem;
+        padding: 0 4px;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--accent-primary) !important;
+        border-bottom: 2px solid var(--accent-primary);
+    }
+
+    [data-testid="stSidebar"] {
+        background-color: var(--surface-color);
+        border-right: 1px solid var(--border-color);
+    }
+    .sidebar-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--text-main);
+        margin-bottom: 8px;
+    }
+    .sidebar-text {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+        margin-bottom: 24px;
+    }
+    
+    .chip-good { background: #dcfce7; color: #166534; }
+    .chip-watch { background: #fef9c3; color: #854d0e; }
+    .chip-risk { background: #fee2e2; color: #991b1b; }
+    .chip-structural { background: #e0e7ff; color: #3730a3; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Header ---
-st.markdown('<h1 class="main-title">Data Quality Dashboard</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Part D: Data Quality Summary and Impact Analysis for the 2024 French Road Safety Dataset</p>', unsafe_allow_html=True)
+# --- HTML Helper Functions ---
+def render_kpi(label, value, caption, status_class, status_text):
+    html = f"""<div class="kpi-wrapper">
+<div class="kpi-header">
+<span class="kpi-label">{label}</span>
+<span class="kpi-chip {status_class}">{status_text}</span>
+</div>
+<div class="kpi-value">{value}</div>
+<div class="kpi-caption">{caption}</div>
+</div>"""
+    st.markdown(html, unsafe_allow_html=True)
 
-# --- Layout: Tabs ---
-tab1, tab2 = st.tabs(["📊 Quality Report", "⚠️ Impact Analysis"])
+def render_insight_card(title, severity_class, severity_text, takeaway, body, border_color):
+    html = f"""<div class="insight-card" style="border-top-color: {border_color};">
+<div class="insight-header">
+<div style="flex:1;">
+<div class="insight-title">{title}</div>
+</div>
+<span class="kpi-chip {severity_class}">{severity_text}</span>
+</div>
+<div class="insight-takeaway">{takeaway}</div>
+<div class="insight-body">{body}</div>
+</div>"""
+    st.markdown(html, unsafe_allow_html=True)
+
+def render_matrix_row(table_name, desc, issue, status_class, status_text):
+    html = f"""<div class="matrix-row">
+<div class="matrix-table-name">{table_name}</div>
+<div class="matrix-desc">{desc}</div>
+<div class="matrix-issue">{issue}</div>
+<div class="matrix-status"><span class="kpi-chip {status_class}">{status_text}</span></div>
+</div>"""
+    st.markdown(html, unsafe_allow_html=True)
+
+# --- Sidebar ---
+with st.sidebar:
+    st.markdown('<div class="sidebar-title">Quality Intelligence</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-text">Executive Data Quality Readout for the 2024 French Road Safety (BAAC) dataset.</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="sidebar-title">Dataset Context</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-text">Contains 4 relational tables describing accident characteristics, locations, vehicles, and users.</div>', unsafe_allow_html=True)
+    
+    st.divider()
+    st.markdown('<div class="sidebar-text"><strong>Status:</strong> Ready for ETL Phase<br><strong>Profiled:</strong> July 2026</div>', unsafe_allow_html=True)
+
+# --- Hero Section ---
+st.markdown('<span class="hero-badge">2024 BAAC Dataset · Quality Intelligence</span>', unsafe_allow_html=True)
+st.markdown('<h1 class="hero-title">Data Quality Dashboard</h1>', unsafe_allow_html=True)
+st.markdown('<p class="hero-subtitle">Executive summary and impact analysis identifying structural completeness risks, hidden defaults, and schema consistency across the national road safety database.</p>', unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# --- Dynamic KPI Row ---
+col1, col2, col3, col4, col5 = st.columns(5)
+with col1:
+    render_kpi("Tables Profiled", str(num_tables), "Core relational tables", "chip-good", "Complete")
+with col2:
+    status_dup = "chip-good" if duplicates < 10 else "chip-warning"
+    text_dup = "Excellent" if duplicates < 10 else "Needs Cleaning"
+    render_kpi("Duplicates", str(duplicates), "Total duplicated records", status_dup, text_dup)
+with col3:
+    status_coord = "chip-good" if invalid_coords == 0 else "chip-risk"
+    text_coord = "Valid" if invalid_coords == 0 else "Invalid Exists"
+    render_kpi("Invalid Coords", str(invalid_coords), "Mathematical boundary checks", status_coord, text_coord)
+with col4:
+    status_unk = "chip-watch" if hidden_unknowns_cols > 0 else "chip-good"
+    render_kpi("Hidden '-1'", str(hidden_unknowns_cols), "Columns with pseudo-nulls", status_unk, "ETL Risk")
+with col5:
+    render_kpi(">90% Missing", str(high_missing_cols), "Highly sparse attributes", "chip-structural", "Structural")
+
+st.markdown("<br><br>", unsafe_allow_html=True)
+
+# --- Tabs ---
+tab1, tab2 = st.tabs(["Quality Report", "Operational Impact"])
 
 # --- TAB 1: Quality Report ---
 with tab1:
-    st.header("Quality Report: Main Issues Discovered")
-    st.markdown("Based on the data profiling of the 4 core tables (`caract`, `lieux`, `usagers`, `vehicules`), the overall dataset structure is highly consistent, but exhibits several targeted quality issues.")
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.info("**Missingness Clusters**\n\nSeveral columns exceed **90% missingness** (e.g. `lartpc`, `v2`, `secu3`, `etatp`, `occutc`). These are highly conditional fields (only apply to public transport, pedestrians, etc).")
-    with col2:
-        st.warning("**Hidden 'Unknowns'**\n\nThe dataset uses `-1` to encode 'Unknown' or 'Not Filled'. For instance, `v1` (Route index) has 23% hidden unknowns, which pandas defaults to numeric without throwing NaN errors.")
-    with col3:
-        st.success("**High Consistency**\n\n- Only **2 duplicates** out of hundreds of thousands of rows.\n- **0** invalid coordinates or negative birth years.\n- Categorical schemas perfectly respected.")
-
-    st.markdown("---")
-    st.subheader("Deep Dive: Data Completeness Matrix")
+    # Dynamic Data Viz
+    st.markdown('<h3 style="font-weight: 700; margin-bottom: 8px;">Structural Fragmentation</h3>', unsafe_allow_html=True)
+    st.markdown('<p style="color: var(--text-muted); margin-bottom: 24px;">Top 10 columns across the entire database with the highest percentage of missing values.</p>', unsafe_allow_html=True)
     
-    with st.expander("View Missingness by Table", expanded=True):
-        st.markdown("""
-        * **Locations (`lieux`)**: Shows the most severe fragmentation. Variables regarding precise road architecture (`lartpc`, `voie`, `v2`) are frequently missing.
-        * **Users (`usagers`)**: Completeness drops off linearly for secondary and tertiary safety equipment (`secu2` 43% missing, `secu3` 90% missing).
-        * **Vehicles (`vehicules`)**: Almost perfect completeness, except for public-transport specific columns.
-        * **Characteristics (`caract`)**: Address data (`adr`) is missing 4%, but exact coordinates are robustly filled.
-        """)
+    # Natively supported Streamlit bar chart
+    chart_data = missing_df.set_index('Column')[['Missing %']]
+    st.bar_chart(chart_data, height=350, color="#3730a3")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 3 Insight Cards
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        render_insight_card(
+            "Missingness Clusters", "chip-structural", "Structural",
+            "Several columns exceed 90% missingness.",
+            "Fields such as lartpc, v2, secu3, etatp, and occutc are highly sparse. These are conditional attributes that apply only to specific subsets like public transport or pedestrians.",
+            "#3730a3"
+        )
+    with c2:
+        render_insight_card(
+            "Hidden Defaults", "chip-watch", "ETL Risk",
+            "The dataset uses '-1' to encode 'Unknown'.",
+            "Route index (v1) contains 23% hidden unknowns. These pseudo-nulls bypass standard NaN detection and will mathematically distort downstream analytics if not cast to null early.",
+            "#f59e0b"
+        )
+    with c3:
+        render_insight_card(
+            "Schema Consistency", "chip-good", "Excellent",
+            "Structural integrity is exceptionally high.",
+            "Only 2 duplicates exist across hundreds of thousands of rows. There are zero out-of-bounds coordinates, zero negative birth years, and categorical dictionaries are perfectly respected.",
+            "#10b981"
+        )
+    
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    
+    # Completeness Matrix
+    st.markdown('<h3 style="font-weight: 700; margin-bottom: 8px;">Completeness Matrix</h3>', unsafe_allow_html=True)
+    st.markdown('<p style="color: var(--text-muted); margin-bottom: 24px;">Deep-dive into structural fragmentation across the four primary entities.</p>', unsafe_allow_html=True)
+    
+    render_matrix_row("lieux", "Locations & Infrastructure", "Severe fragmentation. Precise architecture fields (lartpc, voie, v2) frequently missing.", "chip-risk", "High Risk")
+    render_matrix_row("usagers", "Individuals Involved", "Linear drop-off in secondary safety equipment (secu2 43% missing, secu3 90% missing).", "chip-watch", "Moderate Risk")
+    render_matrix_row("vehicules", "Vehicles Involved", "Near perfect completeness, excluding public-transport specific columns (occutc).", "chip-good", "Healthy")
+    render_matrix_row("caract", "Accident Characteristics", "Address data (adr) missing 4%, but core coordinates remain robustly populated.", "chip-good", "Healthy")
 
-# --- TAB 2: Impact Analysis ---
+
+# --- TAB 2: Operational Impact ---
 with tab2:
-    st.header("Impact Analysis: Downstream Analytics")
-    st.markdown("How do these quality issues affect our data integration, modeling, and BI workflows?")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<h3 style="font-weight: 700; margin-bottom: 8px;">Downstream Analytics Impact</h3>', unsafe_allow_html=True)
+    st.markdown('<p style="color: var(--text-muted); margin-bottom: 24px;">How missingness and hidden data patterns affect integration, modeling, and BI workflows.</p>', unsafe_allow_html=True)
     
-    # Impact cards using markdown
-    st.markdown("""
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    c1, c2 = st.columns(2)
+    with c1:
+        render_insight_card(
+            "Algorithmic Bias from Missingness", "chip-risk", "High Severity",
+            "Naive row-dropping introduces survivorship bias.",
+            "If we drop the 5% of rows missing Max Speed (vma) or the 2% missing Birth Year (an_nais), we risk skewing predictive models. Severe rural accidents might disproportionately lack speed limit data.",
+            "#ef4444"
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        render_insight_card(
+            "Dimensionality Inflation", "chip-watch", "Medium Severity",
+            "Sparse matrices risk overfitting machine learning models.",
+            "Features with >90% missingness (e.g., public transport occupants) create extremely sparse vectors if one-hot encoded. We must partition models (e.g., cars vs. buses) to avoid the curse of dimensionality.",
+            "#f59e0b"
+        )
         
-        <div class="metric-card">
-            <h3 style="color: #FF6B6B;">1. Algorithmic Bias from Missingness</h3>
-            <p><strong>Impact:</strong> If we naively drop rows with missing values (e.g., dropping the 5% of rows missing <code>vma</code> Max Speed or 2% missing <code>an_nais</code> Birth Year), we risk introducing <strong>survivorship bias</strong>. Certain types of accidents (e.g., severe rural accidents) might disproportionately lack speed limit data, skewing predictive models.</p>
-        </div>
+    with c2:
+        render_insight_card(
+            "Statistical Distortion", "chip-risk", "High Severity",
+            "Hidden '-1' values will break distance calculations.",
+            "These 'Unknown' values are extremely dangerous for ML algorithms or aggregations. If a clustering algorithm ingests -1 as a literal coordinate or category weight, results will be mathematically corrupted.",
+            "#ef4444"
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        render_insight_card(
+            "Geospatial Mapping Failures", "chip-watch", "Medium Severity",
+            "Missing strings cause silent point drops in mapping libraries.",
+            "While coordinate boundaries are valid, 4.2% missing addresses and formatting issues (commas vs. decimals) will cause Kepler/Folium to drop points. Density maps may underrepresent certain departments.",
+            "#f59e0b"
+        )
         
-        <div class="metric-card">
-            <h3 style="color: #4ECDC4;">2. Statistical Distortion by Hidden Defaults</h3>
-            <p><strong>Impact:</strong> The <code>-1</code> 'Unknown' values are extremely dangerous for downstream ML algorithms or simple aggregations. For example, if a clustering algorithm ingests <code>-1</code> as a literal coordinate or category weight, it will mathematically distort distance calculations. <strong>Must be converted to <code>NaN</code> early in the ETL pipeline.</strong></p>
-        </div>
-        
-        <div class="metric-card">
-            <h3 style="color: #FFE66D;">3. Dimensionality Inflation</h3>
-            <p><strong>Impact:</strong> Features with >90% missingness (like <code>occutc</code> - public transport occupants) create extremely sparse matrices if one-hot encoded or dummified. This can cause the curse of dimensionality and overfit models unless we specifically partition models (e.g., one model for cars, one for buses).</p>
-        </div>
-        
-        <div class="metric-card">
-            <h3 style="color: #1A535C;">4. Geospatial Mapping Failures</h3>
-            <p><strong>Impact:</strong> While coordinate values are mathematically valid, the 4.2% missing addresses and potential formatting issues (commas instead of decimals) will cause mapping libraries (like Folium/Kepler) to drop those points silently. Geospatial density maps may underrepresent certain departments.</p>
-        </div>
-        
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     
-    st.markdown("---")
-    st.subheader("Recommended ETL Architecture")
-    st.markdown("""
-    To mitigate these issues, the downstream ETL pipeline should implement:
-    1. **Type Casting Layer**: Instantly cast string coordinates (with commas) to floats.
-    2. **Imputation Layer**: Transform all `-1` integers in categorical/numerical columns to `np.nan`.
-    3. **Branching Logic**: Separate pedestrian/public transport rows for subset-specific analysis rather than forcing them into a dense global schema.
-    """)
-
-# --- Footer ---
-st.sidebar.markdown("### About")
-st.sidebar.info("This dashboard summarizes Part D of the Data Quality Assessment. It dynamically renders findings from the profiling tasks performed on the 2024 BAAC datasets.")
+    st.markdown('<h3 style="font-weight: 700; margin-bottom: 16px;">Recommended ETL Architecture</h3>', unsafe_allow_html=True)
+    st.markdown("""<div style="background: var(--surface-color); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 24px;">
+<ul style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.8; margin-bottom: 0;">
+<li><strong><span style="color: var(--accent-primary);">1. Type Casting Layer:</span></strong> Instantly cast string coordinates (handling European comma notation) to floats.</li>
+<li><strong><span style="color: var(--accent-warning);">2. Null Imputation Layer:</span></strong> Transform all <code>-1</code> integers in categorical/numerical columns directly to <code>np.nan</code>.</li>
+<li><strong><span style="color: var(--accent-success);">3. Contextual Branching:</span></strong> Separate pedestrian and public transport rows into dedicated schema branches rather than forcing them into a global dense matrix.</li>
+</ul>
+</div>""", unsafe_allow_html=True)
